@@ -1,11 +1,11 @@
 /*
  * @Date: 2024-03-28 16:37:08
  * @Author: DarkskyX15
- * @LastEditTime: 2024-04-18 21:49:16
+ * @LastEditTime: 2024-04-18 22:11:11
  */
 
-#ifndef _DSTRING_HPP_
-#define _DSTRING_HPP_
+#ifndef _DYNAMIC_STRING_HPP_
+#define _DYNAMIC_STRING_HPP_
 
 #include <string>
 #include <vector>
@@ -60,10 +60,13 @@ namespace DynamicString
             return __out;
         }
 
-        MixedString operator+ (const MixedString& __m_str);
+        MixedString operator+ (const MixedString& __m_str) const;
         void operator+= (const MixedString& __m_str);
         inline MixedChar& operator[] (int __index);
         inline const MixedChar& operator[] (int __index) const;
+        MixedString& operator= (const MixedString& __m_str);
+        MixedString& operator= (MixedString&& __m_str);
+
         inline MixedChar& at (int __index);
         inline const MixedChar& at (int __index) const;
         inline int size() const { return str_data.size(); }
@@ -154,6 +157,7 @@ namespace DynamicString
 
     MixedString::MixedString(const MixedString& __ms): str_data(__ms.str_data) {
         int c_size = __ms.str_data.size();
+        raw_size = __ms.raw_size;    
         if (__ms.cstr_ptr != nullptr) {
             cstr_ptr = new char[c_size + 1]();
             for (int i = 0; i < c_size + 1; ++i) {
@@ -166,8 +170,7 @@ namespace DynamicString
         raw_size = __ms.raw_size;
         cstr_ptr = __ms.cstr_ptr;
         __ms.cstr_ptr = nullptr;
-        str_data = __ms.str_data;
-        __ms.str_data.clear();
+        str_data = std::move(__ms.str_data);
     }
 
     MixedString::~MixedString() {
@@ -206,7 +209,7 @@ namespace DynamicString
         return cstr_ptr;
     }
 
-    MixedString MixedString::operator+ (const MixedString& __m_str) {
+    MixedString MixedString::operator+ (const MixedString& __m_str) const {
         MixedString temp(*this);
         temp.raw_size += __m_str.raw_size;
         temp.str_data.reserve(__m_str.str_data.size());
@@ -222,6 +225,28 @@ namespace DynamicString
         for (auto& mc : __m_str.str_data) {
             str_data.push_back(mc);
         }
+    }
+
+    MixedString& MixedString::operator= (const MixedString& __m_str) {
+        if (&__m_str == this) return *this;
+        raw_size = __m_str.raw_size;
+        str_data = __m_str.str_data;
+        if (__m_str.cstr_ptr != nullptr) {
+            cstr_ptr = new char[raw_size + 1]();
+            for (int i = 0; i < raw_size + 1; ++i) {
+                cstr_ptr[i] = __m_str.cstr_ptr[i];
+            }
+        } else cstr_ptr = nullptr;
+        return *this;
+    }
+
+    MixedString& MixedString::operator= (MixedString&& __m_str) {
+        if (&__m_str == this) return *this;
+        raw_size = __m_str.raw_size;
+        str_data = std::move(__m_str.str_data);
+        cstr_ptr = __m_str.cstr_ptr;
+        __m_str.cstr_ptr = nullptr;
+        return *this;
     }
 
     // Private Functions
@@ -304,4 +329,4 @@ namespace DynamicString
 } // namespace DynamicString
 namespace dstring = DynamicString;
 
-#endif /* _DSTRING_HPP_ */
+#endif /* _DYNAMIC_STRING_HPP_ */
