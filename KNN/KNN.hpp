@@ -1,7 +1,7 @@
 /*
  * @Date: 2024-03-28 18:19:40
  * @Author: DarkskyX15
- * @LastEditTime: 2024-04-18 14:24:02
+ * @LastEditTime: 2024-04-26 16:25:44
  */
 #ifndef DS_KNN_HPP
 #define DS_KNN_HPP
@@ -171,6 +171,13 @@ namespace knn {
                     binaryWrite(tags[rec.state], file_out);
                 }
             }
+            if (normalized) {
+                binaryWrite(true, file_out);
+                for (auto ele_u : __u) binaryWrite(ele_u, file_out);
+                for (auto ele_a : __a) binaryWrite(ele_a, file_out);
+            } else {
+                binaryWrite(false, file_out);
+            }
             file_out.close();
         }
 
@@ -224,6 +231,20 @@ namespace knn {
                     data.push_back({features, tags[s]});
                 }
             }
+            binaryRead(normalized, fin);
+            if (normalized) {
+                __u.reserve(dimension);
+                __a.reserve(dimension);
+                __T temp_data;
+                for (int i = 0; i < dimension; ++i) {
+                    binaryRead(temp_data, fin);
+                    __u.push_back(temp_data);
+                }
+                for (int i = 0; i < dimension; ++i) {
+                    binaryRead(temp_data, fin);
+                    __a.push_back(temp_data);
+                }
+            }
         }
 
         /// @brief z-score法标准化
@@ -237,13 +258,13 @@ namespace knn {
                     __mean += data[i].vec[dim];
                 }
                 __mean /= static_cast<double>(tot_samples);
-                __u.push_back(__mean);
+                __u.push_back(static_cast<__T>(__mean));
                 for (int i = 0; i < tot_samples; ++i) {
                     __std_o += (data[i].vec[dim] - __mean) * (data[i].vec[dim] - __mean);
                 }
                 __std_o /= static_cast<double>(tot_samples);
                 __std_o = std::sqrt(__std_o);
-                __a.push_back(__std_o);
+                __a.push_back(static_cast<__T>(__std_o));
 
                 for (int i = 0; i < tot_samples; ++i) {
                     data[i].vec[dim] = (data[i].vec[dim] - __mean) / __std_o;
@@ -298,7 +319,7 @@ namespace knn {
         }
 
         bool normalized = false;
-        std::vector<double> __u, __a;
+        std::vector<__T> __u, __a;
         std::vector< Record<__T, __ST> > data;
         long long dimension, tot_samples;
     };
@@ -338,13 +359,16 @@ namespace knn {
                         std::vector<const Record<__T, __ST>*>& __container) = 0;
         virtual void multiThreadGet(const std::vector<__T>& __vec, int k, int thread_cnt,
                                     std::vector<const Record<__T, __ST>*>& __container) = 0;
+        std::vector<const Record<__T, __ST>*> getResultContainer() {
+            return std::vector<const Record<__T, __ST>*>();
+        }
     };
 
     /// @brief 暴力法KNN
     /// @tparam __T 数据集中的数据类型 `Type`
     /// @tparam __DT 距离计算过程中的数据类型 `Distance Type`
     /// @tparam __ST 数据分类的数据类型 `State Type`
-    template<class __T = double, class __DT = double, class __ST = int>
+    template<class __T = double, class __DT = __T, class __ST = int>
     class Brute : public BaseKNN<__T, __DT, __ST> {
         public:
         /// @brief 以指定数据集，权重函数和距离函数初始化
@@ -503,7 +527,7 @@ namespace knn {
     /// @tparam __T 数据集中的数据类型 `Type`
     /// @tparam __DT 距离计算过程中的数据类型 `Distance Type`
     /// @tparam __ST 数据分类的数据类型 `State Type`
-    template<class __T = double, class __DT = double, class __ST = int>
+    template<class __T = double, class __DT = __T, class __ST = int>
     class KDTree : public BaseKNN<__T, __DT, __ST>{
         public:
         /// @brief 以指定数据集，权重函数和距离函数初始化
