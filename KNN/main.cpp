@@ -1,7 +1,7 @@
 /*
  * @Date: 2024-03-28 20:53:03
  * @Author: DarkskyX15
- * @LastEditTime: 2024-05-01 14:38:58
+ * @LastEditTime: 2024-05-01 15:09:35
  */
 #include "knn.hpp"
 #include "config.hpp"
@@ -273,12 +273,12 @@ bool executeCommand(const std::string& __cmd) {
             }
             // read to predict
             std::vector<std::vector<double>> wait_query;
-            if (args[4] == "file") {
-                if (!checkFile(args[5])) {
+            if (args[3] == "file") {
+                if (!checkFile(args[4])) {
                     showErr(__cmd, "Cannot open file: " + args[4]);
                     return false;
                 }
-                std::ifstream test_in(args[5], std::ios::in);
+                std::ifstream test_in(args[4], std::ios::in);
                 std::string line_temp;
                 std::vector<std::string> temp_split;
                 std::vector<double> temp_test;
@@ -294,10 +294,10 @@ bool executeCommand(const std::string& __cmd) {
                     wait_query.push_back(temp_test);
                 }
                 test_in.close();
-            } else if (args[4] == "direct") {
+            } else if (args[3] == "direct") {
                 std::vector<double> temp_test;
                 double x;
-                for (int i = 5; i < args.size(); ++i) {
+                for (int i = 4; i < args.size(); ++i) {
                     fromStr(args[i], x);
                     temp_test.push_back(x);
                 }
@@ -307,7 +307,7 @@ bool executeCommand(const std::string& __cmd) {
                 return false;
             }
             // check multi
-            int k, idx = 0; fromStr(args[3], k);
+            int k, idx = 0; fromStr(args[2], k);
             bool multi_flg = (global_thread_cnt > 0) ? true : false;
             std::cout << "Start prediction with k=" << k << "\nMultithread: "
                     << (multi_flg ? "Enable " : "Disable ") << " Total: "
