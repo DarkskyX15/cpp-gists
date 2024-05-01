@@ -1,7 +1,7 @@
 /*
  * @Date: 2024-03-28 18:19:40
  * @Author: DarkskyX15
- * @LastEditTime: 2024-04-26 16:25:44
+ * @LastEditTime: 2024-05-01 00:31:48
  */
 #ifndef DS_KNN_HPP
 #define DS_KNN_HPP
@@ -27,11 +27,12 @@
 #include <unordered_map>
 #include <set>
 #include <iomanip>
+#include <sstream>
 
 /// @brief 
 namespace knn {
 
-    typedef std::vector<std::pair<int, double>> knn_k_optimization_ret_list;
+    typedef std::vector<std::pair<int, double>> knn_ranged_k_ret_list;
 
     /// @brief 简单的用于计时的工具类
     class Timer { 
@@ -89,6 +90,7 @@ namespace knn {
         virtual inline void appendRecord(const std::vector<__T>& __vec, const __ST __state) = 0;
         virtual inline void appendRecord(const Record<__T, __ST>& __record) = 0;
         virtual void clear() = 0;
+        virtual std::vector<__T> syncNormalization(const std::vector<__T>& __vec) const = 0;
     };
 
     /// @brief 实现的基本数据集
@@ -275,8 +277,8 @@ namespace knn {
         /// @brief 将给定的向量与该数据集的标准化同步
         /// @param __vec 给定向量
         /// @return 标准化后的向量
-        std::vector<__T> syncNormalization(const std::vector<__T>& __vec) {
-            if (!normalized) return {};
+        std::vector<__T> syncNormalization(const std::vector<__T>& __vec) const override {
+            if (!normalized) return __vec;
             std::vector<__T> temp;
             temp.reserve(__vec.size());
             for (int i = 0; i < __vec.size(); ++i) {
@@ -362,6 +364,7 @@ namespace knn {
         std::vector<const Record<__T, __ST>*> getResultContainer() {
             return std::vector<const Record<__T, __ST>*>();
         }
+        virtual const DataSet<__T, __ST>* getDatasetRef() const = 0;
     };
 
     /// @brief 暴力法KNN
@@ -435,7 +438,7 @@ namespace knn {
                 if (i == thread_cnt - 1) {
                     right = data_ptr->dataSize() - 1;
                 } else {
-                    right = left + unit_len;
+                    right = left + unit_len - 1;
                 }
                 std::promise<sub_ret*> __promise;
                 sub_task_rets.push_back(__promise.get_future());
@@ -474,6 +477,10 @@ namespace knn {
             }
         }
 
+        const DataSet<__T, __ST>* getDatasetRef() const override {
+            return data_ptr;
+        }
+
         private:
 
         typedef std::pair<const Record<__T, __ST>*, __DT> sub_pair;
@@ -487,7 +494,7 @@ namespace knn {
 
         void subTask(long long left, long long right, std::vector<__T> __vec,
                      std::promise<sub_ret*> __promise, int k) {
-            sub_ret* ptr = new sub_ret;
+            sub_ret* ptr = new sub_ret();
             const Record<__T, __ST>* __rec_ptr;
             for (long long index = left; index <= right; ++index) {
                 __rec_ptr = data_ptr->getRef(index);
@@ -561,6 +568,10 @@ namespace knn {
                 deconstruct(root);
                 root = nullptr;
             }
+        }
+
+        const DataSet<__T, __ST>* getDatasetRef() const override {
+            return data_ptr;
         }
         
         /// @brief 获取结果，不保证返回数量为k
@@ -682,20 +693,28 @@ namespace knn {
     /// @param __sep 分割字符
     void splitString(const std::string& __str, 
                     std::vector<std::string>& __container,
-                    const char __sep = ' ') {
+                    const char __sep = -1) {
         std::string temp;
-        long long left = 0, right = 0;
-        long long send = __str.size();
-        while (left < send && right < send) {
-            if (__str.at(right) == __sep) {
-                temp = __str.substr(left, right - left);
-                if (temp.size()) __container.push_back(temp);
-                left = right + 1;
+        __container.clear();
+        if (__sep < 0) {
+            std::stringstream s_sep(__str, std::ios::in);
+            while(s_sep >> temp) {
+                __container.push_back(temp);
             }
-            right += 1;
+        } else {
+            long long left = 0, right = 0;
+            long long send = __str.size();
+            while (left < send && right < send) {
+                if (__str.at(right) == __sep) {
+                    temp = __str.substr(left, right - left);
+                    if (temp.size()) __container.push_back(temp);
+                    left = right + 1;
+                }
+                right += 1;
+            }
+            temp = __str.substr(left, right - left);
+            if (temp.size()) __container.push_back(temp);
         }
-        temp = __str.substr(left, right - left);
-        if (temp.size()) __container.push_back(temp);
     }
 
     template <typename __T>
@@ -896,7 +915,7 @@ namespace knn {
     }
     
     template<class __T, class __DT, class __ST>
-    /// @brief 检查k取特定值时预测的正确率
+    /// @brief 检查k取特定值并固定测试集时预测的正确率
     /// @tparam __T 数据类型
     /// @tparam __DT 距离类型
     /// @tparam __ST 标签类型
@@ -933,71 +952,89 @@ namespace knn {
         return static_cast<double>(correct) / __test_set.dataSize();
     }
 
-    template<class __DataSet, class __KNN>
-    /// @brief 尝试选取最优的K
-    /// @tparam __DataSet 数据集类型
+    template<class __T, class __ST, class __KNN>
+    double crossValidation(const DataSet<__T, __ST>& __dataset, int __k, int __group_cnt) {
+        if (__group_cnt < 1) return 0.0;
+        int tot_size = __dataset.dataSize();
+        int dimension = __dataset.getDimension();
+        int group_unit = tot_size / __group_cnt;
+        int final_group = group_unit + (tot_size % __group_cnt);
+        std::vector<const Record<__T, __ST>*> all_data;
+        all_data.reserve(tot_size);
+        for (int i = 0; i < tot_size; ++i) {
+            all_data.push_back(__dataset.getRef(i));
+        }
+        std::random_device rd;
+        std::default_random_engine gen_rand(rd());
+        std::shuffle(all_data.begin(), all_data.end(), gen_rand);
+        std::vector<std::pair<int, int>> group_ranges;
+        group_ranges.reserve(__group_cnt);
+        for (int i = 0; i < __group_cnt - 1; ++i) {
+            group_ranges.push_back(std::make_pair(i * group_unit, (i + 1) * group_unit));
+        }
+        group_ranges.push_back(std::make_pair(tot_size - final_group, tot_size));
+        
+        // Start cv
+        double acc_sum = 0.0;
+        for (int i = 0; i < __group_cnt; ++i) {
+            int group_size = group_ranges[i].second - group_ranges[i].first;
+            DefaultDataSet<__T, __ST> train_set(dimension, tot_size - group_size), 
+                                      test_set(dimension, group_size);
+            for (int j = 0; j < tot_size; ++j) {
+                if (j >= group_ranges[i].first && j < group_ranges[i].second) {
+                    test_set.appendRecord(*all_data[j]);
+                } else {
+                    train_set.appendRecord(*all_data[j]);
+                }
+            }
+            __KNN __knn_obj(train_set);
+            acc_sum += testCorrectness(__knn_obj, __k, test_set);
+        }
+        return acc_sum / static_cast<double>(__group_cnt);
+    }
+
+    template<class __T, class __ST, class __KNN>
+    /// @brief 获取范围内K的准确度
+    /// @tparam __T 数据类型
+    /// @tparam __ST 标签类型
     /// @tparam __KNN KNN类型
     /// @param __data_set 数据集
-    /// @param iteration_cnt 迭代次数
-    /// @param __lower k的初始值
-    /// @param __upper k的最大值
-    /// @param __test_size 测试点个数
-    /// @param __result_size K保留个数
+    /// @param iteration_cnt 重复次数
+    /// @param __k_range 表示k范围的std::pair
+    /// @param __group_count 交叉验证组数
     /// @param __container 结果容器，类型为`knn_k_optimization_ret_list`
-    void optimizeK(const __DataSet& data_set, int iteration_cnt,
-                   std::pair<int, int> __k_range, int __test_size,
-                   int __result_size, knn_k_optimization_ret_list& __container) {
+    void kRangedCheck(const DataSet<__T, __ST>& data_set, int iteration_cnt,
+                   std::pair<int, int> __k_range, int __group_count,
+                   knn_ranged_k_ret_list& __container) {
         int __lower = __k_range.first;
         int __upper = __k_range.second;
         if (__lower > __upper) std::swap(__lower, __upper);
         __container.clear();
         std::unordered_map<int, double> k_map;
-        long long dimension = data_set.getDimension();
 
         for (int iter = 0; iter < iteration_cnt; ++iter) {
-            __DataSet train(dimension), test(dimension);
-            selectTestGroup(data_set, train, test, __test_size);
-            __KNN knn(train);
-
             for (int k = __lower; k <= __upper; ++k) {
-                double c = testCorrectness(knn, k, test);
+                double c = crossValidation<__T, __ST, __KNN>(data_set, k, __group_count);
                 auto it = k_map.find(k);
-                if (it == k_map.end()) k_map[k] = c;
+                if (it == k_map.end()) k_map.insert(std::make_pair(k, c));
                 else it->second += c;
             }
         }
 
-        typedef std::pair<int, double> pnode;
-        auto cmp = [](pnode& left, pnode& right){
-            if (left.second < right.second) return true;
-            return false;
-        };
-        std::priority_queue<pnode, std::vector<pnode>, decltype(cmp)> big_heap(cmp);
         for (auto it = k_map.begin(); it != k_map.end(); ++it) {
             it->second /= static_cast<double>(iteration_cnt);
-            big_heap.push(*it);
-        }
-
-        while (__result_size && big_heap.size()) {
-            __container.push_back(big_heap.top());
-            big_heap.pop();
-            --__result_size;
+            __container.push_back(*it);
         }
     }
 
-    template<class __DataSet, class __KNN>
-    void __optimize_sub_task(const __DataSet* __ds, int iter, int __lk, int __uk,
-                             int __ts, std::promise<std::unordered_map<int, double>*> __p) {
+    template<class __T, class __ST, class __KNN>
+    void __optimize_sub_task(const DataSet<__T, __ST>* __ds, int iter, int __lk, int __uk,
+                             int __cv, std::promise<std::unordered_map<int, double>*> __p) {
         auto map_ptr = new std::unordered_map<int, double>();
-        long long dimension = __ds->getDimension();
 
         for (int i = 0; i < iter; ++i) {
-            __DataSet train(dimension), test(dimension);
-            selectTestGroup(*__ds, train, test, __ts);
-            __KNN knn(train);
-
             for (int k = __lk; k <= __uk; ++k) {
-                double c = testCorrectness(knn, k, test);
+                double c = crossValidation<__T, __ST, __KNN>(*__ds, k, __cv);
                 auto it = map_ptr->find(k);
                 if (it == map_ptr->end()) map_ptr->insert(std::make_pair(k, c));
                 else it->second += c;
@@ -1006,21 +1043,20 @@ namespace knn {
         __p.set_value(map_ptr);
     }
 
-    template<class __DataSet, class __KNN>
-    /// @brief 尝试选取最优的K（多线程加速重载）
-    /// @tparam __DataSet 数据集类型
+    template<class __T, class __ST, class __KNN>
+    /// @brief 获取范围内K的准确度（多线程加速重载）
+    /// @tparam __T 数据类型
+    /// @tparam __ST 标签类型
     /// @tparam __KNN KNN类型
     /// @param __data_set 数据集
-    /// @param iteration_cnt 迭代次数
+    /// @param iteration_cnt 重复次数
     /// @param thread_cnt 线程数
-    /// @param __lower k的初始值
-    /// @param __upper k的最大值
-    /// @param __test_size 测试点个数
-    /// @param __result_size K保留个数
+    /// @param __k_range 表示k范围的std::pair
+    /// @param __group_count 交叉验证组数
     /// @param __container 结果容器，类型为`knn_k_optimization_ret_list`
-    void optimizeK(const __DataSet& data_set, int iteration_cnt, int thread_cnt,
-                       std::pair<int, int> __k_range, int __test_size,
-                       int __result_size, knn_k_optimization_ret_list& __container) {
+    void kRangedCheck(const DataSet<__T, __ST>& data_set, int iteration_cnt, int thread_cnt,
+                       std::pair<int, int> __k_range, int __group_count,
+                       knn_ranged_k_ret_list& __container) {
         int __lower = __k_range.first;
         int __upper = __k_range.second;
         if (__lower > __upper) std::swap(__lower, __upper);
@@ -1030,11 +1066,10 @@ namespace knn {
         std::vector<std::future<std::unordered_map<int, double>*>> thread_rets;
         thread_pool.reserve(thread_cnt);
         thread_rets.reserve(thread_cnt);
-        long long dimension = data_set.getDimension();
 
         if (iteration_cnt < thread_cnt) {
-            optimizeK<__DataSet, __KNN>(data_set, iteration_cnt, {__lower, 
-                                           __upper}, __test_size, __result_size, __container);
+            kRangedCheck<__T, __ST, __KNN>(data_set, iteration_cnt, {__lower, 
+                                           __upper}, __group_count, __container);
             return ;
         }
 
@@ -1046,8 +1081,8 @@ namespace knn {
             else cnt = iteration_unit;
             std::promise<std::unordered_map<int, double>*> __pro;
             thread_rets.push_back(__pro.get_future());
-            auto t_ptr = new std::thread(__optimize_sub_task<__DataSet, __KNN>, 
-                                         &data_set, cnt, __lower, __upper, __test_size, std::move(__pro));
+            auto t_ptr = new std::thread(__optimize_sub_task<__T, __ST, __KNN>, 
+                                         &data_set, cnt, __lower, __upper, __group_count, std::move(__pro));
             thread_pool.push_back(t_ptr);
         }
 
@@ -1065,21 +1100,52 @@ namespace knn {
             thread_pool[it] = nullptr;
         }
 
-        typedef std::pair<int, double> pnode;
-        auto cmp = [](const pnode& left, const pnode& right){
-            if (left.second < right.second) return true;
-            return false;
-        };
-        std::priority_queue<pnode, std::vector<pnode>, decltype(cmp)> ret_heap(cmp);
         for (auto it = tot_k_map.begin(); it != tot_k_map.end(); ++it) {
             it->second /= static_cast<double>(iteration_cnt);
-            ret_heap.push(*it);
+            __container.push_back(*it);
         }
-        while (__result_size && ret_heap.size()) {
-            __container.push_back(ret_heap.top());
-            ret_heap.pop();
-            --__result_size;
+    }
+
+    void collectKDetails(knn_ranged_k_ret_list& __list, int height = 10,
+                         bool show_diagram = false) {
+        double __top = -1.0, __top_k = 0;
+        double __bottom = 2.0;
+        std::for_each(__list.begin(), __list.end(),
+        [&__top, &__bottom, &__top_k] (const std::pair<int, double>& element) {
+            if (__top < element.second) {
+                __top = element.second;
+                __top_k = element.first;
+            }
+            __bottom = std::min(__bottom, element.second);
+        });
+        double unit = (__top - __bottom) / height;
+        std::cout << "Max accuracy: " << __top
+                << " when k=" << __top_k << '\n';
+        if (!show_diagram) return ;
+        std::cout << "Full diagram:\n";
+        std::sort(__list.begin(), __list.end(),
+        [] (const std::pair<int, double>& left,
+            const std::pair<int, double>& right) {
+            return left.first < right.first;
+        });
+        
+        std::vector<int> heights(__list.size(), 0);
+        for (int i = 0; i < __list.size(); ++i) {
+            heights[i] = round(((__list[i].second - __bottom) / (__top - __bottom)) * height);
         }
+        for (int i = height; i >= 0; --i) {
+            std::cout << std::fixed << std::left << std::setw(4)
+                << std::setprecision(4) << __bottom + unit * i;
+            std::cout.unsetf(std::ios::fixed | std::ios::left);
+            std::cout << std::setprecision(6);
+            for (int j = 0; j < __list.size(); ++j) {
+                if (heights[j] == i) std::cout << 'x';
+                else std::cout << ' ';
+            }
+            std::cout << '\n';
+        }
+        std::cout << "K range: [" << __list[0].first
+                << ',' << __list[__list.size() - 1].first << "]\n";
     }
 
 } /* namespace knn */
