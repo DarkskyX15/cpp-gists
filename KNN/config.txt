@@ -1,6 +1,6 @@
 # 启用开始时命令
 allowStartCommand=false
-# 每个命令文件包含的最多命令数
+# 每次执行包含的最多命令数
 maxLinePerCommand=-1
 # 开始时命令的路径
 startCommandFile=path/of/command_file
@@ -11,4 +11,8 @@ useDetailedPrint=true
 # 启用K图表绘制
 useRangedDiagram=true
 # 图表高度
-diagramHeight=15
+diagramHeight=10
+# 在Windows上将编码调整为Unicode
+windowsUnicode=true
+# 不进入交互模式
+noInteraction=false

@@ -1,7 +1,7 @@
 /*
  * @Date: 2024-03-28 20:53:03
  * @Author: DarkskyX15
- * @LastEditTime: 2024-05-01 01:52:10
+ * @LastEditTime: 2024-05-01 14:38:58
  */
 #include "knn.hpp"
 #include "config.hpp"
@@ -87,6 +87,7 @@ bool executeCommand(const std::string& __cmd) {
                 return false;
             }
             std::vector<std::string> cmd_lines(readCommandFile(args[1]));
+            if (!cmd_lines.size()) return false;
             for (const auto& line : cmd_lines) {
                 // err
                 if ((executed_cnt > global_max_line) && global_max_line > 0) {
@@ -209,7 +210,6 @@ bool executeCommand(const std::string& __cmd) {
             return true;
         } 
         else if (args[0] == "range") {
-            // TODO 更改优化方法 + 完成该部分命令
             if (args.size() < 7) {
                 showErr(__cmd, "Expected format: range <begin> <end> <iteration> <group_cnt> <dataset> <brute/kd-tree>");
                 return false;
@@ -261,8 +261,8 @@ bool executeCommand(const std::string& __cmd) {
 
         } else if (args[0] == "predict") {
             // err
-            if (args.size() < 6) {
-                showErr(__cmd, "Expected format: predict <knn> <multithread> <k> <direct/file> <vec>/<path>");
+            if (args.size() < 5) {
+                showErr(__cmd, "Expected format: predict <knn> <k> <direct/file> <vec>/<path>");
                 return false;
             }
             // check knn
@@ -303,12 +303,12 @@ bool executeCommand(const std::string& __cmd) {
                 }
                 wait_query.push_back(temp_test);
             } else {
-                showErr(__cmd, "Unknown command source: " + args[3]);
+                showErr(__cmd, "Unknown prediction source: " + args[3]);
                 return false;
             }
             // check multi
             int k, idx = 0; fromStr(args[3], k);
-            bool multi_flg = (args[2] == "true") ? true : false;
+            bool multi_flg = (global_thread_cnt > 0) ? true : false;
             std::cout << "Start prediction with k=" << k << "\nMultithread: "
                     << (multi_flg ? "Enable " : "Disable ") << " Total: "
                     << wait_query.size() << '\n';
@@ -341,6 +341,43 @@ bool executeCommand(const std::string& __cmd) {
                 if (it.second.second == 1) std::cout << "kd-tree\n";
                 else std::cout << "brute\n";
             }
+            return true;
+        } else if (args[0] == "help") {
+            std::cout <<
+                "启动时可附加参数，该参数为需要执行的命令文件路径。" 
+                "可用的命令：\n"
+                "dataset -> 创建数据集对象\n\t"
+                "格式: dataset <变量名> <文件路径> [分隔符]\n\t"
+                "将数据集每行按分隔符分隔，若省略则按空白字符分隔。数据维数自动检测。\n"
+                "knn -> 创建KNN对象\n\t"
+                "格式: knn <变量名> <计算方法> <绑定数据集>\n\t"
+                "绑定数据集应为已经创建了的数据集对象的变量名。\n\t"
+                "计算方法参数只能'brute'和'kd-tree'选其一。\n"
+                "predict -> 用指定KNN对象预测未知数据\n\t"
+                "格式: predict <KNN对象名> <k> <数据来源> <数据>/<文件路径>\n\t"
+                "数据来源参数只能'file'和'direct'选其一\n\t"
+                "选择file应提供命令最后的文件路径参数，该文本文件每行包含一个需要预测的数据。\n\t"
+                "选择direct应提供数据参数，数据参数为需要预测的向量，每个特征以空格分隔。\n\t"
+                "配置文件中useDetailedPrint选项控制是否详细按距离升序输出k近邻。\n\t"
+                "配置文件中multiThreadCount选项控制使用的线程数。\n"
+                "variables -> 显示已创建的数据集和KNN对象\n\t"
+                "格式: variables\n"
+                "cv -> 对指定数据集进行关于k的交叉验证\n\t"
+                "格式: cv <数据集> <计算方法> <k> <分组数量>\n\t"
+                "计算方法参数只能'brute'和'kd-tree'选其一。\n"
+                "range -> 对区间内的k批量交叉验证并统计输出\n\t"
+                "格式: range <开始k> <结束k> <重复次数> <分组数量> <数据集> <计算方法>\n\t"
+                "计算方法参数只能'brute'和'kd-tree'选其一。\n\t"
+                "配置文件中useRangedDiagram选项控制统计输出是否启用图表\n\t"
+                "配置文件中diagramHeight选项控制图表高度\n"
+                "function -> 执行命令文件\n\t"
+                "格式: function <命令文件路径>\n\t"
+                "配置文件中maxLinePerCommand选项控制一次执行的最大命令数, <=0则不做限制\n"
+                "<变量名标识符> -> 对创建的对象进行操作\n\t"
+                "格式: <变量名标识符> [参数]\n\t"
+                "若省略参数则显示对象的内存位置并提供可用参数的说明。\n"
+                "exit -> 退出并释放创建的对象内存\n\t"
+                "格式: exit\n";
             return true;
         } else {
             auto it = variable_table.find(args[0]);
@@ -404,7 +441,7 @@ int main(int argc, char* argv[]) {
         }
         out_file << "# 启用开始时命令\n"
                 << "allowStartCommand=false\n"
-                << "# 每个命令文件包含的最多命令数\n"
+                << "# 每次执行包含的最多命令数\n"
                 << "maxLinePerCommand=-1\n"
                 << "# 开始时命令的路径\n"
                 << "startCommandFile=path/of/command_file\n"
@@ -415,7 +452,11 @@ int main(int argc, char* argv[]) {
                 << "# 启用K图表绘制\n"
                 << "useRangedDiagram=true\n"
                 << "# 图表高度\n"
-                << "diagramHeight=10\n";
+                << "diagramHeight=10\n"
+                << "# 在Windows上将编码调整为Unicode\n"
+                << "windowsUnicode=true\n"
+                << "# 不进入交互模式\n"
+                << "noInteraction=false\n";
         out_file.close();
         std::cout << "Created default config!\n";
     } else {
@@ -431,13 +472,18 @@ int main(int argc, char* argv[]) {
     global_cfg.get_helper("maxLinePerCommand", global_max_line);
     global_cfg.get_helper("multiThreadCount", global_thread_cnt);
     global_cfg.get_helper("startCommandFile", global_start_path);
-    std::string dtp_flg;
-    global_cfg.get_helper("useDetailedPrint", dtp_flg);
-    global_detail_print = (dtp_flg == "true") ? true : false;
-    std::string urd_flg;
-    global_cfg.get_helper("useRangedDiagram", urd_flg);
-    global_range_diag = (urd_flg == "true") ? true : false;
+    std::string flg_temp;
+    global_cfg.get_helper("useDetailedPrint", flg_temp);
+    global_detail_print = (flg_temp == "true") ? true : false;
+    global_cfg.get_helper("useRangedDiagram", flg_temp);
+    global_range_diag = (flg_temp == "true") ? true : false;
+    bool no_interact;
+    global_cfg.get_helper("noInteraction", flg_temp);
+    no_interact = (flg_temp == "true") ? true : false;
     global_cfg.get_helper("diagramHeight", global_diag_height);
+    std::string win_unicode;
+    global_cfg.get_helper("windowsUnicode", win_unicode);
+    if (win_unicode == "true") system("chcp 65001");
 
 
     std::cout << "Launch with config:\n"
@@ -447,7 +493,9 @@ int main(int argc, char* argv[]) {
             << "startCommandFile: " << global_start_path << '\n'
             << "useRangedDiagram" << (global_range_diag ? "true" : "false") << '\n'
             << "useDetailedPrint: " << (global_detail_print ? "true" : "false") << '\n'
-            << "diagramHeight: " << global_diag_height << "\n\n";
+            << "noInteraction: " << (no_interact ? "true" : "false") << '\n'
+            << "diagramHeight: " << global_diag_height << '\n'
+            << "windowsUnicode: " << win_unicode << "\n\n";
     
     // PreStart
     if (global_allow_start == "true") {
@@ -471,7 +519,7 @@ int main(int argc, char* argv[]) {
 
     // Check Console Args
     if (argc <= 1) {
-        std::cout << "No console args found, start cmd mode.\n";   
+        std::cout << "No console args found.\n";   
     } else {
         std::cout << "Get command file path: " << argv[1] << '\n';
         std::cout << "Try open...\n";
@@ -487,14 +535,20 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
-        std::cout << "Command file execution finished, start cmd mode\n";
+        std::cout << "Command file execution finished.\n";
     }
 
     // Start command mode
-    std::cout << '\n';
+    if (no_interact) {
+        std::cout << "Skip command mode due to config settings.\n";
+        return 0;
+    } else {
+        std::cout << "Start command mode.\n";
+    }
+    std::cout << "\nType 'help' for instructions.\n";
     std::string cmd_buffer;
     while (true) {
-        std::cout << ">>> ";
+        std::cout << ">>> " << std::flush;
         std::getline(std::cin, cmd_buffer);
         bool ret = executeCommand(cmd_buffer);
         if (ret) std::cout << "-> Success!\n\n";
