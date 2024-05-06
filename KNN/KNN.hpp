@@ -1,7 +1,7 @@
 /*
  * @Date: 2024-03-28 18:19:40
  * @Author: DarkskyX15
- * @LastEditTime: 2024-05-01 00:31:48
+ * @LastEditTime: 2024-05-06 14:21:56
  */
 #ifndef DS_KNN_HPP
 #define DS_KNN_HPP
@@ -805,11 +805,16 @@ namespace knn {
     /// @param __ds_ref 数据集的引用
     /// @param __line_func 对于每一行执行的函数
     void readDatasetFile(const char* __filename, DataSet<__T, __ST>& __ds_ref, 
-                        std::function<Record<__T, __ST>(const std::string&)> __line_func) {
+                        std::function<Record<__T, __ST>(const std::string&)> __line_func,
+                        int __skipped = 0) {
         std::ifstream ifs(__filename, std::ios::in);
         if (ifs.is_open()) {
             std::string __buf;
             while (std::getline(ifs, __buf)) {
+                if (__skipped) {
+                    --__skipped;
+                    continue;
+                }
                 if (__buf.size()) __ds_ref.appendRecord(__line_func(__buf));
             }
             ifs.close();
@@ -824,11 +829,15 @@ namespace knn {
     /// @param __ds_ref 数据集的引用
     /// @param __line_func_obj 函数对象 (`ReadLineFunc`的子类)
     void readDatasetFile(const char* __filename, DataSet<__T, __ST>& __ds_ref, 
-                        const ReadLineFunc<__T, __ST>& __line_func_obj) {
+                        const ReadLineFunc<__T, __ST>& __line_func_obj, int __skipped = 0) {
         std::ifstream ifs(__filename, std::ios::in);
         if (ifs.is_open()) {
             std::string __buf;
             while (std::getline(ifs, __buf)) {
+                if (__skipped) {
+                    --__skipped;
+                    continue;
+                }
                 if (__buf.size()) __ds_ref.appendRecord(__line_func_obj(__buf));
             }
             ifs.close();
@@ -1133,17 +1142,17 @@ namespace knn {
         for (int i = 0; i < __list.size(); ++i) {
             heights[i] = round(((__list[i].second - __bottom) / (__top - __bottom)) * height);
         }
+        std::cout << std::fixed << std::left << std::setprecision(4);
         for (int i = height; i >= 0; --i) {
-            std::cout << std::fixed << std::left << std::setw(4)
-                << std::setprecision(4) << __bottom + unit * i;
-            std::cout.unsetf(std::ios::fixed | std::ios::left);
-            std::cout << std::setprecision(6);
+            std::cout << std::setw(4) << __bottom + unit * i;
             for (int j = 0; j < __list.size(); ++j) {
                 if (heights[j] == i) std::cout << 'x';
                 else std::cout << ' ';
             }
             std::cout << '\n';
         }
+        std::cout.unsetf(std::ios::fixed | std::ios::left);
+        std::cout << std::setprecision(6);
         std::cout << "K range: [" << __list[0].first
                 << ',' << __list[__list.size() - 1].first << "]\n";
     }

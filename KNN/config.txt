@@ -7,7 +7,7 @@ startCommandFile=path/of/command_file
 # 多线程数，小于等于0时不使用多线程
 multiThreadCount=20
 # 启用细节打印
-useDetailedPrint=true
+useDetailedPrint=false
 # 启用K图表绘制
 useRangedDiagram=true
 # 图表高度

@@ -1,7 +1,7 @@
 /*
  * @Date: 2024-03-28 20:53:03
  * @Author: DarkskyX15
- * @LastEditTime: 2024-05-01 15:09:35
+ * @LastEditTime: 2024-05-02 22:44:47
  */
 #include "knn.hpp"
 #include "config.hpp"
@@ -12,8 +12,8 @@ int executed_cnt = 0;
 int global_thread_cnt, global_max_line, global_diag_height;
 bool global_detail_print, global_range_diag;
 std::string global_allow_start, global_start_path;
-std::unordered_map<std::string, std::pair<knn::BaseKNN<double, double, int>*, int>> knn_storage;
-std::unordered_map<std::string, knn::DefaultDataSet<double, int>*> dataset_storage;
+std::unordered_map<std::string, std::pair<knn::BaseKNN<double, double, std::string>*, int>> knn_storage;
+std::unordered_map<std::string, knn::DefaultDataSet<double, std::string>*> dataset_storage;
 std::set<std::string> variable_table;
 
 inline void showErr(const std::string& __cmd, const std::string& __err) {
@@ -47,7 +47,7 @@ std::vector<std::string> readCommandFile(const std::string& __source) {
 }
 
 bool operateDataset(const std::vector<std::string>& __args,
-                    DefaultDataSet<double, int>* __target) {
+                    DefaultDataSet<double, std::string>* __target) {
     if (__args[1] == "z-score") {
         std::cout << "Perform z-score normalization on " << __args[0] << '\n';
         __target->zScoreNormalization();
@@ -57,7 +57,7 @@ bool operateDataset(const std::vector<std::string>& __args,
 }
 
 bool operateKNN(const std::vector<std::string>& __args,
-                int knn_type, BaseKNN<double, double, int>* __target) {
+                int knn_type, BaseKNN<double, double, std::string>* __target) {
     return false;
 }
 
@@ -123,18 +123,36 @@ bool executeCommand(const std::string& __cmd) {
             }
             std::ifstream check_in(args[2], std::ios::in);
             std::string check_buf;
-            do std::getline(check_in, check_buf);
-            while (!check_buf.size());
+            std::vector<std::string> check_list;
+            int skipped_lines = -1;
+            do {
+                ++skipped_lines;
+                std::getline(check_in, check_buf);
+                if (!check_in) break;
+                if (!check_buf.size()) continue;
+                bool valid = true;
+                cfg::splitString(check_buf, check_list, arg_sep);
+                for (int index = 0; index < check_list.size() - 1 && valid; ++index) {
+                    for (char chr : check_list[index]) {
+                        if (!((chr >= '0' && chr <= '9') || chr == '.')) {
+                            valid = false;
+                            break;
+                        }
+                    }
+                }
+                if (!valid) continue;
+                else break;
+            } while (true);
             check_in.close();
             
+            std::cout << "Skipped lines: " << skipped_lines << '\n';
             std::cout << "Predict line: " << check_buf << '\n';
-            std::vector<std::string> check_list;
-            cfg::splitString(check_buf, check_list, arg_sep);
             int dimension = check_list.size() - 1;
             std::cout << "Predict dimension: " << dimension << '\n';
 
-            auto ds_ptr = new DefaultDataSet<double, int>(dimension);
-            readDatasetFile(args[2].c_str(), *ds_ptr, DefaultReadLine<double, int>(arg_sep, dimension));
+            auto ds_ptr = new DefaultDataSet<double, std::string>(dimension);
+            readDatasetFile(args[2].c_str(), *ds_ptr,
+                            DefaultReadLine<double, std::string>(arg_sep, dimension), skipped_lines);
             dataset_storage.insert(std::make_pair(args[1], ds_ptr));
             variable_table.insert(args[1]);
 
@@ -163,15 +181,15 @@ bool executeCommand(const std::string& __cmd) {
             
             // type diff
             if (args[2] == "kd-tree") {
-                auto knn_ptr = new KDTree<double, double, int>(*(dit->second));
-                auto base_ptr = dynamic_cast<BaseKNN<double, double, int>*>(knn_ptr);
+                auto knn_ptr = new KDTree<double, double, std::string>(*(dit->second));
+                auto base_ptr = dynamic_cast<BaseKNN<double, double, std::string>*>(knn_ptr);
                 knn_storage.insert(std::make_pair(args[1], std::make_pair(base_ptr, 1)));
                 variable_table.insert(args[1]);
                 std::cout << "Created KNN instance with structure KD-Tree at " << base_ptr << '\n';
                 return true;
             } else if (args[2] == "brute") {
-                auto knn_ptr = new Brute<double, double, int>(*(dit->second));
-                auto base_ptr = dynamic_cast<BaseKNN<double, double, int>*>(knn_ptr);
+                auto knn_ptr = new Brute<double, double, std::string>(*(dit->second));
+                auto base_ptr = dynamic_cast<BaseKNN<double, double, std::string>*>(knn_ptr);
                 knn_storage.insert(std::make_pair(args[1], std::make_pair(base_ptr, 0)));
                 variable_table.insert(args[1]);
                 std::cout << "Created KNN instance with structure Brute at " << base_ptr << '\n';
@@ -198,9 +216,9 @@ bool executeCommand(const std::string& __cmd) {
             int k; fromStr(args[3], k);
             int groups; fromStr(args[4], groups);
             if (args[2] == "brute") {
-                ans = crossValidation<double, int, Brute<>>(*(dit->second), k, groups);
+                ans = crossValidation<double, std::string, Brute<double, double, std::string>>(*(dit->second), k, groups);
             } else if (args[2] == "kd-tree") {
-                ans = crossValidation<double, int, KDTree<>>(*(dit->second), k, groups);
+                ans = crossValidation<double, std::string, KDTree<double, double, std::string>>(*(dit->second), k, groups);
             } else {
                 showErr(__cmd, "Unknown knn structure: " + args[2]);
                 return false;
@@ -242,15 +260,19 @@ bool executeCommand(const std::string& __cmd) {
             knn_ranged_k_ret_list answers;
             if (args[6] == "brute") {
                 if (global_thread_cnt > 0) {
-                    kRangedCheck<double, int, Brute<>>(*(dit->second), iterations, global_thread_cnt, {k_begin, k_end}, groups, answers);
+                    kRangedCheck<double, std::string, Brute<double, double, std::string>>
+                    (*(dit->second), iterations, global_thread_cnt, {k_begin, k_end}, groups, answers);
                 } else {
-                    kRangedCheck<double, int, Brute<>>(*(dit->second), iterations, {k_begin, k_end}, groups, answers);
+                    kRangedCheck<double, std::string, Brute<double, double, std::string>>
+                    (*(dit->second), iterations, {k_begin, k_end}, groups, answers);
                 }
             } else if (args[6] == "kd-tree") {
                 if (global_thread_cnt > 0) {
-                    kRangedCheck<double, int, KDTree<>>(*(dit->second), iterations, global_thread_cnt, {k_begin, k_end}, groups, answers);
+                    kRangedCheck<double, std::string, KDTree<double, double, std::string>>
+                    (*(dit->second), iterations, global_thread_cnt, {k_begin, k_end}, groups, answers);
                 } else {
-                    kRangedCheck<double, int, KDTree<>>(*(dit->second), iterations, {k_begin, k_end}, groups, answers);
+                    kRangedCheck<double, std::string, KDTree<double, double, std::string>>
+                    (*(dit->second), iterations, {k_begin, k_end}, groups, answers);
                 }
             } else {
                 showErr(__cmd, "Unknown knn structure: " + args[6]);
