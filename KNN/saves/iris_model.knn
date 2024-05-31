@@ -1,0 +1,3 @@
+dataset dataset_iris_model bin .\saves\datasets\iris_model1717134120524.bin
+k_val k_iris_model 17
+knn iris_model brute dataset_iris_model

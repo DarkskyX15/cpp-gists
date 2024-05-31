@@ -1,7 +1,7 @@
 /*
  * @Date: 2024-03-28 18:19:40
  * @Author: DarkskyX15
- * @LastEditTime: 2024-05-06 14:21:56
+ * @LastEditTime: 2024-05-31 12:43:24
  */
 #ifndef DS_KNN_HPP
 #define DS_KNN_HPP
@@ -136,7 +136,7 @@ namespace knn {
             data.push_back(__record);
         }
 
-        void saveToBin(const char* __target) {
+        void saveToBin(const char* __target) const {
             std::ofstream file_out(__target, std::ios::out | std::ios::binary);
             // Header
             binaryWrite(tot_samples, file_out);
@@ -308,12 +308,12 @@ namespace knn {
 
         private:
         template<class __WT>
-        void binaryWrite(const __WT& __data, std::ofstream& __ofs) {
+        void binaryWrite(const __WT& __data, std::ofstream& __ofs) const {
             const char* x = reinterpret_cast<const char*>(&__data);
             __ofs.write(x, sizeof(__WT));
         }
         template<class __RT>
-        void binaryRead(__RT& __val, std::ifstream& __ifs) {
+        void binaryRead(__RT& __val, std::ifstream& __ifs) const {
             char* x = new char[sizeof(__RT)];
             __ifs.read(x, sizeof(__RT));
             __val = *reinterpret_cast<__RT*>(x);
@@ -721,15 +721,20 @@ namespace knn {
     void fromStr(const std::string& __str, __T& value) {
         if constexpr (std::is_integral_v<__T>) {
             value = 0;
-            for (auto it = __str.begin(); it != __str.end(); ++it) {
+            int is_minus = 0;
+            if (__str[0] == '-') is_minus = 1;
+            for (auto it = __str.begin() + is_minus; it != __str.end(); ++it) {
                 value = (value << 1) + (value << 3);
                 value += *it - '0';
             }
+            if (is_minus) value *= -1;
         } else if constexpr (std::is_floating_point_v<__T>) {
             value = 0.0;
+            int is_minus = 0;
+            if (__str[0] == '-') is_minus = 1;
             __T base = 1.0;
             bool floating = false;
-            for (auto it = __str.begin(); it != __str.end(); ++it) {
+            for (auto it = __str.begin() + is_minus; it != __str.end(); ++it) {
                 if (!floating) {
                     if (*it == '.') {
                         floating = true;
@@ -744,6 +749,7 @@ namespace knn {
                     value += base * static_cast<__T>(*it - '0');
                 }
             }
+            if (is_minus) value *= -1.0;
         } else {
             value = __str;
         }

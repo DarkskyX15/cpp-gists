@@ -3,7 +3,7 @@ allowStartCommand=false
 # 每次执行包含的最多命令数
 maxLinePerCommand=-1
 # 开始时命令的路径
-startCommandFile=path/of/command_file
+startCommandFile=func.txt
 # 多线程数，小于等于0时不使用多线程
 multiThreadCount=20
 # 启用细节打印
