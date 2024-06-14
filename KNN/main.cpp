@@ -1,7 +1,7 @@
 /*
  * @Date: 2024-03-28 20:53:03
  * @Author: DarkskyX15
- * @LastEditTime: 2024-05-31 15:54:07
+ * @LastEditTime: 2024-06-14 11:48:32
  */
 #include "knn.hpp"
 #include "config.hpp"
@@ -30,6 +30,19 @@ inline bool checkFile(const std::string& __source) {
         file_check.close();
         return true;
     }
+}
+
+template<class __WT>
+void binaryWrite(const __WT& __data, std::ofstream& __ofs) {
+    const char* x = reinterpret_cast<const char*>(&__data);
+    __ofs.write(x, sizeof(__WT));
+}
+template<class __RT>
+void binaryRead(__RT& __val, std::ifstream& __ifs) {
+    char* x = new char[sizeof(__RT)];
+    __ifs.read(x, sizeof(__RT));
+    __val = *reinterpret_cast<__RT*>(x);
+    delete[] x;
 }
 
 void generateRunId() {
@@ -135,9 +148,54 @@ bool executeCommand(const std::string& __cmd) {
                 showErr(__cmd, "Expected format: load <save_name>");
                 return false;
             }
-            std::string func("function .\\saves\\" + args[1] + ".knn");
-            std::cout << "Try load model with command: " << func << '\n';
-            return executeCommand(func);
+            std::string data_path(".\\saves\\" + args[1] + ".knn");
+            std::string dataset_name("dataset_" + args[1]);
+            std::string k_name("k_" + args[1]);
+            if (!checkFile(data_path)) {
+                showErr(__cmd, "Model file does not exist!");
+                return false;
+            }
+            auto setname_ptr = variable_table.find(dataset_name);
+            if (setname_ptr != variable_table.end()) {
+                showErr(__cmd, "Auto generated dataset name conflicts with existed ones.");
+                return false;
+            }
+            setname_ptr = variable_table.find(k_name);
+            if (setname_ptr != variable_table.end()) {
+                showErr(__cmd, "Auto generated k name conflicts with existed ones.");
+                return false;
+            }
+            // open
+            std::ifstream load_file(data_path, std::ios::in | std::ios::binary);
+            char knn_type;
+            int k_val;
+            binaryRead(k_val, load_file);
+            binaryRead(knn_type, load_file);
+            if (knn_type != 'k' && knn_type != 'b') {
+                showErr(__cmd, "Unknown knn type: " + knn_type);
+                load_file.close();
+                return false;
+            }
+            // header
+            auto dataset_ptr = new DefaultDataSet<double, std::string>();
+            dataset_ptr->loadFromBin(load_file);
+            dataset_storage.insert(std::make_pair(dataset_name, dataset_ptr));
+            variable_table.insert(dataset_name);
+            load_file.close();
+            // put k
+            k_val_storage.insert(std::make_pair(k_name, k_val));
+            variable_table.insert(k_name);
+            // create knn
+            if (knn_type == 'k') {
+                auto kd_knn_ptr = new KDTree<double, double, std::string>(*dataset_ptr);
+                knn_storage.insert({args[1], {kd_knn_ptr, 1}});
+            } else if (knn_type == 'b') {
+                auto brute_knn_ptr = new Brute<double, double, std::string>(*dataset_ptr);
+                knn_storage.insert({args[1], {brute_knn_ptr, 0}});
+            }
+            variable_table.insert(args[1]);
+            std::cout << "Successfully load model: " << args[1] << '\n';
+            return true;
 
         } else if (args[0] == "save") {
             // err
@@ -151,18 +209,22 @@ bool executeCommand(const std::string& __cmd) {
                 return false;
             }
             // generate paths
-            std::string dataset_path(".\\saves\\datasets\\" + args[3] + run_id + ".bin");
             std::string save_path(".\\saves\\" + args[3] + ".knn");
-            std::string knn_type(iter->second.second == 1 ? "kd-tree" : "brute");
-
+            char knn_type{iter->second.second == 1 ? 'k' : 'b'};
+            if (checkFile(save_path)) {
+                showErr(__cmd, "Model already exists:" + args[3]);
+                return false;
+            }
+            // open file stream
+            std::ofstream save_file(save_path, std::ios::out | std::ios::binary);
+            int write_k; fromStr(args[2], write_k);
+            // Header
+            binaryWrite(write_k, save_file);
+            binaryWrite(knn_type, save_file);
             auto knn_obj = iter->second.first;
             auto dataset_ptr = dynamic_cast<const DefaultDataSet<double, std::string>*>(knn_obj->getDatasetRef());
-            dataset_ptr->saveToBin(dataset_path.c_str());
-            std::ofstream knn_write(save_path, std::ios::out);
-            knn_write << "dataset dataset_" << args[3] << " bin " << dataset_path << '\n';
-            knn_write << "k_val k_" << args[3] << ' ' << args[2] << '\n';
-            knn_write << "knn " << args[3] << ' ' << knn_type << " dataset_" << args[3] << '\n';
-            knn_write.close();
+            dataset_ptr->saveToBin(save_file);
+            save_file.close();
 
             std::cout << "Successfully save model " << args[1] << " with name " << args[3] << '\n';
             return true;
@@ -522,11 +584,11 @@ bool executeCommand(const std::string& __cmd) {
                 "若省略参数则显示对象的内存位置并提供可用参数的说明。\n"
                 "\nk_val -> 创建储存k参数的变量\n\t"
                 "格式: k_val <变量名标识符> <值>\n\t"
-                "储存中名为\"k_{KNN对象名}\"的k值将在对对应KNN对象执行predict命令时被用于替换非正的k值。\n"
+                "储存中名为\"k_{KNN对象名}\"的k值将在对对应KNN对象执行predict命令时被用作默认k值。\n"
                 "\nsave -> 保存KNN对象及其链接的数据集\n\t"
                 "格式: save <KNN对象名> <k> <组合名称>\n\t"
                 "将已创建的KNN对象与K参数和数据集组合保存。\n\t"
-                "保存后的文件在 .\\saves 中，链接的数据集以二进制形式保存于 .\\saves\\datasets 中。\n"
+                "组合文件以二进制形式保存在 .\\saves 中。\n"
                 "\nload -> 加载保存的KNN对象\n\t"
                 "格式: load <组合名称>\n\t"
                 "加载模型将会创建名为\"dataset_{组合名称}\"的数据集，名为\"{组合名称}\"的KNN对象，\n\t"

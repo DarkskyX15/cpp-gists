@@ -1,7 +1,7 @@
 /*
  * @Date: 2024-03-28 18:19:40
  * @Author: DarkskyX15
- * @LastEditTime: 2024-05-31 12:43:24
+ * @LastEditTime: 2024-06-14 11:28:29
  */
 #ifndef DS_KNN_HPP
 #define DS_KNN_HPP
@@ -138,6 +138,11 @@ namespace knn {
 
         void saveToBin(const char* __target) const {
             std::ofstream file_out(__target, std::ios::out | std::ios::binary);
+            saveToBin(file_out);
+            file_out.close();
+        }
+
+        void saveToBin(std::ofstream& file_out) const {
             // Header
             binaryWrite(tot_samples, file_out);
             binaryWrite(dimension, file_out);
@@ -180,11 +185,15 @@ namespace knn {
             } else {
                 binaryWrite(false, file_out);
             }
-            file_out.close();
         }
 
         void loadFromBin(const char* __source) {
             std::ifstream fin(__source, std::ios::in | std::ios::binary);
+            loadFromBin(fin);
+            fin.close();
+        }
+
+        void loadFromBin(std::ifstream& fin) {
             // Header
             binaryRead(tot_samples, fin);
             binaryRead(dimension, fin);
